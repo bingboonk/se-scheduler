@@ -618,7 +618,7 @@ async function generateEmergency() {
     saveData();
   } catch(e) {
     emergencyForm.loading = false;
-    aiStatus = "❌ Error generating itinerary. Check your internet connection.";
+    aiStatus = "❌ Error generating itinerary. aiStatus = "❌ Error: " + (e.message || "Unknown error");.";
   }
   render();
 }

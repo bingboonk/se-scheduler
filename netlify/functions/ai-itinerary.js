@@ -1,6 +1,4 @@
 exports.handler = async function (event) {
-
-  // CORS headers — required so the browser accepts the response
   const cors = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
@@ -8,7 +6,6 @@ exports.handler = async function (event) {
     "Content-Type": "application/json",
   };
 
-  // Handle preflight
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: cors, body: "" };
   }
@@ -17,7 +14,6 @@ exports.handler = async function (event) {
     return { statusCode: 405, headers: cors, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
-  // Check API key is configured
   if (!process.env.ANTHROPIC_API_KEY) {
     return {
       statusCode: 500,
@@ -30,28 +26,18 @@ exports.handler = async function (event) {
   try {
     body = JSON.parse(event.body);
   } catch {
-    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Invalid JSON in request body" }) };
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Invalid JSON body" }) };
   }
 
   const { engineer, area, reason, engRole, weekNum, weekDate } = body;
 
   if (!area || !engineer) {
-    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Missing required fields: engineer and area" }) };
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Missing engineer or area" }) };
   }
 
-  const systemPrompt = `You are a field service scheduling assistant for medical equipment service engineers based in Davao City, Philippines.
-You know the geography of Mindanao well. Generate practical, optimized emergency field itineraries.
-Respond ONLY in this JSON format (no markdown, no extra text):
-{"title":"short title","departure":"city","days":[{"day":1,"stops":["City A → City B → City C"],"overnight":"City C"}],"return":"return route to Davao","notes":"brief operational notes","estimatedDays":1}`;
+  const systemPrompt = `You are a field service scheduling assistant for medical equipment service engineers based in Davao City, Philippines. You know the geography of Mindanao well. Generate practical, optimized emergency field itineraries. Respond ONLY in this JSON format (no markdown, no extra text): {"title":"short title","departure":"city","days":[{"day":1,"stops":["City A to City B"],"overnight":"City C"}],"return":"return route to Davao","notes":"brief operational notes","estimatedDays":1}`;
 
-  const userMsg = `Generate an emergency field service itinerary.
-Engineer: ${engineer}
-Current assigned role this week: ${engRole || "Unknown"}
-Emergency area/destination: ${area}
-Reason: ${reason || "Urgent service call"}
-Week: ${weekNum} starting ${weekDate}
-Base city: Davao City, Philippines
-Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnight needed, plan accordingly.`;
+  const userMsg = `Generate an emergency field service itinerary. Engineer: ${engineer}. Role this week: ${engRole || "Unknown"}. Emergency destination: ${area}. Reason: ${reason || "Urgent service call"}. Week ${weekNum} starting ${weekDate}. Base: Davao City, Philippines. Optimize for Mindanao geography.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -62,7 +48,7 @@ Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnigh
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 1000,
         system: systemPrompt,
         messages: [{ role: "user", content: userMsg }],
@@ -75,7 +61,7 @@ Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnigh
       return {
         statusCode: 500,
         headers: cors,
-        body: JSON.stringify({ error: "Anthropic error: " + (data.error.message || JSON.stringify(data.error)) }),
+        body: JSON.stringify({ error: "Anthropic: " + (data.error.message || JSON.stringify(data.error)) }),
       };
     }
 
@@ -86,19 +72,15 @@ Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnigh
       parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
     } catch {
       parsed = {
-        title: "Emergency Field Trip",
+        title: "Emergency Field Trip to " + area,
         days: [{ day: 1, stops: [area], overnight: "" }],
-        notes: raw || "Area: " + area,
+        notes: raw || "Destination: " + area,
         estimatedDays: 1,
         return: "Return to Davao",
       };
     }
 
-    return {
-      statusCode: 200,
-      headers: cors,
-      body: JSON.stringify(parsed),
-    };
+    return { statusCode: 200, headers: cors, body: JSON.stringify(parsed) };
 
   } catch (err) {
     return {

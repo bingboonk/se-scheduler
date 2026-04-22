@@ -1,20 +1,42 @@
 exports.handler = async function (event) {
-  // Only allow POST
+
+  // CORS headers — required so the browser accepts the response
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  };
+
+  // Handle preflight
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers: cors, body: "" };
+  }
+
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { statusCode: 405, headers: cors, body: JSON.stringify({ error: "Method not allowed" }) };
+  }
+
+  // Check API key is configured
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return {
+      statusCode: 500,
+      headers: cors,
+      body: JSON.stringify({ error: "ANTHROPIC_API_KEY is not set in Netlify environment variables." }),
+    };
   }
 
   let body;
   try {
     body = JSON.parse(event.body);
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body" }) };
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Invalid JSON in request body" }) };
   }
 
   const { engineer, area, reason, engRole, weekNum, weekDate } = body;
 
   if (!area || !engineer) {
-    return { statusCode: 400, body: JSON.stringify({ error: "Missing required fields" }) };
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Missing required fields: engineer and area" }) };
   }
 
   const systemPrompt = `You are a field service scheduling assistant for medical equipment service engineers based in Davao City, Philippines.
@@ -52,7 +74,8 @@ Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnigh
     if (data.error) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: data.error.message || "Anthropic API error" }),
+        headers: cors,
+        body: JSON.stringify({ error: "Anthropic error: " + (data.error.message || JSON.stringify(data.error)) }),
       };
     }
 
@@ -64,21 +87,23 @@ Optimize route for Mindanao geography. If day trip, estimatedDays=1. If overnigh
     } catch {
       parsed = {
         title: "Emergency Field Trip",
-        days: [{ day: 1, stops: [area], overnight: area }],
-        notes: raw,
+        days: [{ day: 1, stops: [area], overnight: "" }],
+        notes: raw || "Area: " + area,
         estimatedDays: 1,
-        return: "→ Davao",
+        return: "Return to Davao",
       };
     }
 
     return {
       statusCode: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: cors,
       body: JSON.stringify(parsed),
     };
+
   } catch (err) {
     return {
       statusCode: 500,
+      headers: cors,
       body: JSON.stringify({ error: "Server error: " + err.message }),
     };
   }
